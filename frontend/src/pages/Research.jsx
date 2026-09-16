@@ -505,6 +505,9 @@ const Research = () => {
         },
         body: JSON.stringify({
           question: trimmedQuestion,
+          ...(currentChatId
+            ? { chat_id: currentChatId }
+            : {}),
         }),
       });
 

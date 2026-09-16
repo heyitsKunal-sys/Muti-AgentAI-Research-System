@@ -218,6 +218,7 @@ def extract_sources(search_results: str) -> list:
 async def create_research(
     user_id: str,
     question: str,
+    chat_id: str | None = None,
     progress_callback: Callable[[dict], None] | None = None,
 ):
     """
@@ -249,22 +250,42 @@ async def create_research(
             "Research question cannot be empty."
         )
 
+    object_chat_id = None
+
+    if chat_id:
+        if not ObjectId.is_valid(chat_id):
+            raise ValueError("Invalid chat ID.")
+
+        object_chat_id = ObjectId(chat_id)
+        existing_chat = await chats_collection.find_one(
+            {
+                "_id": object_chat_id,
+                "user_id": object_user_id,
+            }
+        )
+
+        if not existing_chat:
+            raise ValueError("Chat not found.")
+
     # -----------------------------------------------------
     # Create chat
     # -----------------------------------------------------
 
     now = datetime.now(timezone.utc)
 
-    chat_result = await chats_collection.insert_one(
-        {
-            "user_id": object_user_id,
-            "title": question[:80],
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
+    if not object_chat_id:
+        chat_result = await chats_collection.insert_one(
+            {
+                "user_id": object_user_id,
+                "title": question[:80],
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
 
-    chat_id = chat_result.inserted_id
+        object_chat_id = chat_result.inserted_id
+
+    chat_id = object_chat_id
 
     # -----------------------------------------------------
     # Save user message

@@ -33,6 +33,7 @@ class ResearchRequest(BaseModel):
         min_length=2,
         max_length=5000,
     )
+    chat_id: str | None = None
 
 
 # =========================================================
@@ -56,6 +57,7 @@ async def start_research(
         result = await create_research(
             user_id=current_user_id,
             question=question,
+            chat_id=data.chat_id,
         )
 
         return result
@@ -112,6 +114,7 @@ async def stream_research(
             result = await create_research(
                 user_id=current_user_id,
                 question=question,
+                chat_id=data.chat_id,
                 progress_callback=progress_callback,
             )
 
