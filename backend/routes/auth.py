@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
-
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, EmailStr, Field
 
 from backend.auth import (
     hash_password,
@@ -28,43 +28,87 @@ from backend.services.otp_service import (
 
 router = APIRouter(
     prefix="/api/auth",
-    tags=["Authentication"]
+    tags=["Authentication"],
 )
 
 
-# --------------------------------------------------
+# =========================================================
+# REQUEST MODELS
+# =========================================================
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+    )
+    new_password: str = Field(
+        ...,
+        min_length=8,
+    )
+
+
+# =========================================================
 # REGISTER
-# --------------------------------------------------
+# =========================================================
 
 @router.post("/register")
 async def register(user: UserCreate):
 
-    # Check if user already exists
     existing_user = await users_collection.find_one(
-        {"email": user.email}
+        {
+            "email": user.email,
+        }
     )
 
-    # If already verified, don't create another account
-    if existing_user and existing_user.get("is_verified"):
+    # -----------------------------------------------------
+    # Existing verified account
+    # -----------------------------------------------------
+
+    if existing_user and existing_user.get(
+        "is_verified",
+        False,
+    ):
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An account with this email already exists."
+            detail=(
+                "An account with this email "
+                "already exists."
+            ),
         )
 
+
+    # -----------------------------------------------------
     # Generate OTP
+    # -----------------------------------------------------
+
     otp = generate_otp()
 
-    # Hash password
-    password_hash = hash_password(user.password)
+    password_hash = hash_password(
+        user.password
+    )
 
-    # Current time
-    now = datetime.now(timezone.utc)
+    now = datetime.now(
+        timezone.utc
+    )
 
-    # Existing unverified user
+
+    # -----------------------------------------------------
+    # Existing unverified account
+    # -----------------------------------------------------
+
     if existing_user:
 
         await users_collection.update_one(
-            {"email": user.email},
+            {
+                "email": user.email,
+            },
             {
                 "$set": {
                     "name": user.name,
@@ -75,7 +119,11 @@ async def register(user: UserCreate):
             },
         )
 
-    # New user
+
+    # -----------------------------------------------------
+    # New account
+    # -----------------------------------------------------
+
     else:
 
         await users_collection.insert_one(
@@ -84,140 +132,426 @@ async def register(user: UserCreate):
                 "email": user.email,
                 "password_hash": password_hash,
                 "is_verified": False,
+                "plan": "free",
+                "token_usage": 0,
+                "token_usage_month": now.strftime("%Y-%m"),
                 "created_at": now,
                 "updated_at": now,
             }
         )
 
+
+    # -----------------------------------------------------
     # Save OTP
+    # -----------------------------------------------------
+
     await save_otp(
         user.email,
-        otp
+        otp,
     )
 
-    # Send OTP email
+
+    # -----------------------------------------------------
+    # Send OTP
+    # -----------------------------------------------------
+
     await send_otp_email(
         recipient_email=user.email,
         recipient_name=user.name,
         otp=otp,
     )
 
+
     return {
-        "message": "Verification OTP sent to your email.",
+        "message": (
+            "Verification OTP sent "
+            "to your email."
+        ),
         "email": user.email,
     }
 
 
-# --------------------------------------------------
-# VERIFY OTP
-# --------------------------------------------------
+# =========================================================
+# VERIFY SIGNUP OTP
+# =========================================================
 
 @router.post("/verify-otp")
-async def verify_user_otp(data: OTPVerify):
+async def verify_user_otp(
+    data: OTPVerify,
+):
 
-    # Find user
     user = await users_collection.find_one(
-        {"email": data.email}
+        {
+            "email": data.email,
+        }
     )
 
     if not user:
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found."
+            detail="User not found.",
         )
 
-    # Check if already verified
+
     if user.get("is_verified"):
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Account is already verified."
+            detail=(
+                "Account is already verified."
+            ),
         )
 
+
+    # -----------------------------------------------------
     # Verify OTP
+    # -----------------------------------------------------
+
     is_valid = await verify_otp(
         data.email,
-        data.otp
+        data.otp,
     )
 
     if not is_valid:
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired OTP."
+            detail=(
+                "Invalid or expired OTP."
+            ),
         )
 
-    # Mark account as verified
+
+    # -----------------------------------------------------
+    # Verify account
+    # -----------------------------------------------------
+
     await users_collection.update_one(
-        {"email": data.email},
+        {
+            "email": data.email,
+        },
         {
             "$set": {
                 "is_verified": True,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(
+                    timezone.utc
+                ),
             }
         },
     )
 
+
+    # -----------------------------------------------------
     # Remove OTP
-    await clear_otp(data.email)
+    # -----------------------------------------------------
+
+    await clear_otp(
+        data.email
+    )
+
 
     return {
-        "message": "Email verified successfully."
+        "message": (
+            "Email verified successfully."
+        )
     }
 
 
-# --------------------------------------------------
+# =========================================================
 # LOGIN
-# --------------------------------------------------
+# =========================================================
 
 @router.post("/login")
-async def login(user: UserLogin):
+async def login(
+    user: UserLogin,
+):
 
-    # Find user by email
     existing_user = await users_collection.find_one(
-        {"email": user.email}
+        {
+            "email": user.email,
+        }
     )
 
-    # Don't reveal whether the email exists
+
+    # -----------------------------------------------------
+    # User not found
+    # -----------------------------------------------------
+
     if not existing_user:
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password."
+            detail=(
+                "Invalid email or password."
+            ),
         )
 
-    # User must verify email first
-    if not existing_user.get("is_verified"):
+
+    # -----------------------------------------------------
+    # Email not verified
+    # -----------------------------------------------------
+
+    if not existing_user.get(
+        "is_verified",
+        False,
+    ):
+
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please verify your email before logging in."
+            detail=(
+                "Please verify your email "
+                "before logging in."
+            ),
         )
 
+
+    # -----------------------------------------------------
     # Verify password
+    # -----------------------------------------------------
+
     password_valid = verify_password(
         user.password,
-        existing_user["password_hash"]
+        existing_user["password_hash"],
     )
 
     if not password_valid:
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password."
+            detail=(
+                "Invalid email or password."
+            ),
         )
 
-    # Create JWT access token
+
+    # -----------------------------------------------------
+    # Create JWT
+    # -----------------------------------------------------
+
     access_token = create_access_token(
         {
-            "sub": str(existing_user["_id"]),
+            "sub": str(
+                existing_user["_id"]
+            ),
             "email": existing_user["email"],
         }
     )
 
+
     return {
         "message": "Login successful.",
+
         "access_token": access_token,
+
         "token_type": "bearer",
+
         "user": {
-            "id": str(existing_user["_id"]),
+            "id": str(
+                existing_user["_id"]
+            ),
             "name": existing_user["name"],
             "email": existing_user["email"],
-            "is_verified": existing_user["is_verified"],
+            "is_verified": existing_user[
+                "is_verified"
+            ],
+            "plan": existing_user.get(
+                "plan",
+                "free",
+            ),
+            "subscription_status": existing_user.get(
+                "subscription_status"
+            ),
+        },
+    }
+
+
+# =========================================================
+# FORGOT PASSWORD
+# =========================================================
+
+@router.post("/forgot-password")
+async def forgot_password(
+    data: ForgotPasswordRequest,
+):
+
+    user = await users_collection.find_one(
+        {
+            "email": data.email,
         }
+    )
+
+
+    # -----------------------------------------------------
+    # Don't reveal whether an account exists.
+    # -----------------------------------------------------
+
+    if not user:
+
+        return {
+            "message": (
+                "If an account exists with "
+                "this email, a password reset "
+                "OTP has been sent."
+            )
+        }
+
+
+    # -----------------------------------------------------
+    # Only verified users can reset password
+    # -----------------------------------------------------
+
+    if not user.get(
+        "is_verified",
+        False,
+    ):
+
+        return {
+            "message": (
+                "If an account exists with "
+                "this email, a password reset "
+                "OTP has been sent."
+            )
+        }
+
+
+    # -----------------------------------------------------
+    # Generate reset OTP
+    # -----------------------------------------------------
+
+    otp = generate_otp()
+
+
+    # -----------------------------------------------------
+    # Save OTP
+    # -----------------------------------------------------
+
+    await save_otp(
+        data.email,
+        otp,
+    )
+
+
+    # -----------------------------------------------------
+    # Send reset OTP
+    # -----------------------------------------------------
+
+    await send_otp_email(
+        recipient_email=data.email,
+        recipient_name=user.get(
+            "name",
+            "Meridian User",
+        ),
+        otp=otp,
+    )
+
+
+    return {
+        "message": (
+            "If an account exists with "
+            "this email, a password reset "
+            "OTP has been sent."
+        )
+    }
+
+
+# =========================================================
+# RESET PASSWORD
+# =========================================================
+
+@router.post("/reset-password")
+async def reset_password(
+    data: ResetPasswordRequest,
+):
+
+    user = await users_collection.find_one(
+        {
+            "email": data.email,
+        }
+    )
+
+
+    if not user:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Invalid or expired reset OTP."
+            ),
+        )
+
+
+    if not user.get(
+        "is_verified",
+        False,
+    ):
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Account email is not verified."
+            ),
+        )
+
+
+    # -----------------------------------------------------
+    # Verify reset OTP
+    # -----------------------------------------------------
+
+    is_valid = await verify_otp(
+        data.email,
+        data.otp,
+    )
+
+    if not is_valid:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Invalid or expired reset OTP."
+            ),
+        )
+
+
+    # -----------------------------------------------------
+    # Hash new password
+    # -----------------------------------------------------
+
+    new_password_hash = hash_password(
+        data.new_password
+    )
+
+
+    # -----------------------------------------------------
+    # Update password
+    # -----------------------------------------------------
+
+    await users_collection.update_one(
+        {
+            "email": data.email,
+        },
+        {
+            "$set": {
+                "password_hash": new_password_hash,
+                "updated_at": datetime.now(
+                    timezone.utc
+                ),
+            }
+        },
+    )
+
+
+    # -----------------------------------------------------
+    # Clear OTP
+    # -----------------------------------------------------
+
+    await clear_otp(
+        data.email
+    )
+
+
+    return {
+        "message": (
+            "Password reset successfully."
+        )
     }

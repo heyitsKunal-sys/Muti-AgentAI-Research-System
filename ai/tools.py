@@ -1,41 +1,259 @@
-from langchain.tools import tool
+import os
+
 import requests
 from bs4 import BeautifulSoup
-from tavily import TavilyClient
-import os
-from rich import print
 from dotenv import load_dotenv
+from langchain.tools import tool
+from tavily import TavilyClient
+
+
+# =========================================================
+# ENVIRONMENT
+# =========================================================
 
 load_dotenv()
 
+TAVILY_API_KEY = os.getenv(
+    "TAVILY_API_KEY"
+)
 
-tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
+# =========================================================
+# TAVILY CLIENT
+# =========================================================
+
+if not TAVILY_API_KEY:
+    raise RuntimeError(
+        "TAVILY_API_KEY is not configured."
+    )
+
+tavily = TavilyClient(
+    api_key=TAVILY_API_KEY
+)
+
+
+# =========================================================
+# WEB SEARCH TOOL
+# =========================================================
 
 @tool
 def web_search(query: str) -> str:
-    """You are going to search the web for recent and reliable information on a topic. Return the Titles, URLs and Snippets"""
-    results = tavily.search(query=query, max_results=4)
+    """
+    Search the web for recent and reliable information.
 
-    out = []
+    Returns titles, URLs and snippets from relevant sources.
+    """
 
-    for r in results["results"]:
-        out.append(
-            f"Title: {r['title']}\nURL: {r['url']}\nSnippet: {r['content'][:300]}\n"
+    try:
+
+        query = query.strip()
+
+        if not query:
+            return (
+                "Search failed: "
+                "query cannot be empty."
+            )
+
+
+        results = tavily.search(
+            query=query,
+            max_results=4,
+            search_depth="advanced",
         )
 
-    return "\n--\n".join(out)
 
+        search_results = results.get(
+            "results",
+            [],
+        )
+
+
+        if not search_results:
+
+            return (
+                "No relevant search results "
+                "were found."
+            )
+
+
+        output = []
+
+        for result in search_results:
+
+            title = result.get(
+                "title",
+                "Untitled source",
+            )
+
+            url = result.get(
+                "url",
+                "",
+            )
+
+            content = result.get(
+                "content",
+                "",
+            )
+
+            snippet = content[:500].strip()
+
+
+            if not url:
+                continue
+
+
+            output.append(
+                f"Title: {title}\n"
+                f"URL: {url}\n"
+                f"Snippet: {snippet}\n"
+            )
+
+
+        if not output:
+
+            return (
+                "Search returned results, "
+                "but no usable URLs were found."
+            )
+
+
+        return "\n--\n".join(
+            output
+        )
+
+
+    except Exception as error:
+
+        return (
+            "Web search failed: "
+            f"{str(error)}"
+        )
+
+
+# =========================================================
+# URL SCRAPER TOOL
+# =========================================================
 
 @tool
 def scrape_url(url: str) -> str:
-    """Scrape and return clean text content from a given URL for deeper reading."""
+    """
+    Scrape readable text from a webpage.
+
+    Removes scripts, styles and navigation elements
+    and returns a limited amount of clean text.
+    """
+
     try:
-        resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for tag in soup(["script", "style", "nav", "footer"]):
+
+        url = url.strip()
+
+        if not url.startswith(
+            (
+                "http://",
+                "https://",
+            )
+        ):
+
+            return (
+                "Scraping failed: "
+                "invalid URL."
+            )
+
+
+        response = requests.get(
+            url,
+            timeout=15,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 "
+                    "(Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) "
+                    "Chrome/120.0 Safari/537.36"
+                )
+            },
+        )
+
+
+        response.raise_for_status()
+
+
+        soup = BeautifulSoup(
+            response.text,
+            "html.parser",
+        )
+
+
+        # -------------------------------------------------
+        # Remove unwanted elements
+        # -------------------------------------------------
+
+        for tag in soup(
+            [
+                "script",
+                "style",
+                "nav",
+                "footer",
+                "header",
+                "aside",
+                "form",
+                "noscript",
+            ]
+        ):
+
             tag.decompose()
-        return soup.get_text(separator=" ", strip=True)[:3000]
-    except Exception as e:
-        return f"Could not scrape URL: {str(e)}"
-    
+
+
+        # -------------------------------------------------
+        # Extract text
+        # -------------------------------------------------
+
+        text = soup.get_text(
+            separator=" ",
+            strip=True,
+        )
+
+
+        # -------------------------------------------------
+        # Clean excessive whitespace
+        # -------------------------------------------------
+
+        text = " ".join(
+            text.split()
+        )
+
+
+        if not text:
+
+            return (
+                "The webpage did not "
+                "contain readable text."
+            )
+
+
+        # Keep context manageable for the LLM.
+        return text[:8000]
+
+
+    except requests.exceptions.Timeout:
+
+        return (
+            "Could not scrape URL: "
+            "request timed out."
+        )
+
+
+    except requests.exceptions.RequestException as error:
+
+        return (
+            "Could not scrape URL: "
+            f"{str(error)}"
+        )
+
+
+    except Exception as error:
+
+        return (
+            "Could not scrape URL: "
+            f"{str(error)}"
+        )

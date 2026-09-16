@@ -3,6 +3,8 @@ langchain>=0.2.0
 langchain-core>=0.2.0
 langchain-community>=0.2.0
 langchain-openai>=0.1.0
+langchain-chroma>=0.1.0
+langchain-huggingface>=0.1.0
 
 # OpenAI
 openai>=1.30.0
@@ -18,16 +20,30 @@ lxml>=5.0.0
 # Environment variables
 python-dotenv>=1.0.0
 
-# Async support (important for agents/tools)
+# Async support
 aiohttp>=3.9.0
 
-# Data handling (optional but useful in pipelines)
+# FastAPI backend
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+
+# MongoDB
+motor>=3.4.0
+pymongo>=4.7.0
+
+# Authentication / JWT
+python-jose>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0
+
+# Data handling
 pandas>=2.0.0
 
 # Token counting / text utils
 tiktoken>=0.6.0
 
-# Logging / debugging (optional but recommended)
+# Logging / debugging
 rich>=13.7.0
 
 # Retry + robustness
@@ -36,8 +52,25 @@ tenacity>=8.2.0
 # JSON handling improvements
 orjson>=3.9.0
 
-# Typing support (helps in bigger projects)
+# Pydantic
 pydantic>=2.5.0
 
-# Optional (for advanced parsing / HTML cleanup)
+# Optional HTML cleanup
 html5lib>=1.1
+
+# =========================================================
+# PDF PROCESSING
+# =========================================================
+
+pypdf>=4.0.0
+
+# =========================================================
+# EMBEDDINGS
+# =========================================================
+
+sentence-transformers>=2.7.0
+
+# HuggingFace integration
+huggingface-hub>=0.23.0
+
+stripe>=12.0.0
