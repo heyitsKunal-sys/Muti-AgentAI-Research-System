@@ -2,24 +2,48 @@ from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
 
-# =========================================================
-# EMBEDDING MODEL
-# =========================================================
+MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-mpnet-base-v2"
-)
+_embeddings = None
+_vector_store = None
 
 
 # =========================================================
-# CHROMADB VECTOR STORE
+# LAZY EMBEDDING MODEL
 # =========================================================
 
-vector_store = Chroma(
-    collection_name="meridian_research",
-    embedding_function=embeddings,
-    persist_directory="./chroma_db",
-)
+def get_embeddings():
+    """
+    Create the embedding model only when the vector layer is first used.
+    This avoids loading the large model during FastAPI startup,
+    which is what typically triggers Render OOMs.
+    """
+    global _embeddings
+
+    if _embeddings is None:
+        _embeddings = HuggingFaceEmbeddings(
+            model_name=MODEL_NAME,
+        )
+
+    return _embeddings
+
+
+# =========================================================
+# LAZY CHROMADB VECTOR STORE
+# =========================================================
+
+def get_vector_store():
+    """Return the persisted Chroma collection, initializing it on first use."""
+    global _vector_store
+
+    if _vector_store is None:
+        _vector_store = Chroma(
+            collection_name="meridian_research",
+            embedding_function=get_embeddings(),
+            persist_directory="./chroma_db",
+        )
+
+    return _vector_store
 
 
 # =========================================================
@@ -108,7 +132,9 @@ def add_research_documents(
         for index in range(len(chunks))
     ]
 
-    vector_store.add_texts(
+    store = get_vector_store()
+
+    store.add_texts(
         texts=chunks,
         metadatas=metadatas,
         ids=ids,
@@ -180,7 +206,9 @@ def add_pdf_documents(
     if not all_chunks:
         return 0
 
-    vector_store.add_texts(
+    store = get_vector_store()
+
+    store.add_texts(
         texts=all_chunks,
         metadatas=all_metadatas,
         ids=all_ids,
@@ -220,9 +248,11 @@ def search_research(
     # USER + CHAT ISOLATION
     # -----------------------------------------------------
 
+    store = get_vector_store()
+
     if chat_id:
 
-        return vector_store.similarity_search(
+        return store.similarity_search(
             query=query,
             k=k,
             filter={
@@ -241,7 +271,7 @@ def search_research(
     # USER-ONLY SEARCH
     # -----------------------------------------------------
 
-    return vector_store.similarity_search(
+    return store.similarity_search(
         query=query,
         k=k,
         filter={
@@ -265,7 +295,8 @@ def delete_chat_documents(
     This keeps vector data isolated after chat deletion.
     """
 
-    collection = vector_store._collection
+    store = get_vector_store()
+    collection = store._collection
 
     existing = collection.get(
         where={
