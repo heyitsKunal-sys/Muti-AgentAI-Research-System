@@ -10,10 +10,6 @@ from ai.agents import (
     writer_chain,
 )
 
-from backend.services.vector_service import (
-    add_research_documents,
-    search_research,
-)
 
 
 # =========================================================
@@ -110,12 +106,13 @@ def run_research_pipeline(
 
     1. Search Agent
     2. Reader Agent
-    3. ChromaDB + RAG
-    4. Writer Agent
-    5. Critic Agent
+    3. Writer Agent
+    4. Critic Agent
 
-    user_id and chat_id are used to isolate
-    ChromaDB retrieval between users and chats.
+    The research pipeline intentionally skips ChromaDB/RAG so the
+    agent answers are based on live search + reader analysis rather than
+    vector retrieval. PDF uploads remain available as a separate feature
+    that uses ChromaDB for document-grounded search.
     """
 
     topic = topic.strip()
@@ -301,97 +298,18 @@ Only use information supported by the sources.
         "Source analysis completed.",
     )
 
-    # ============================================================
-    # 3. CHROMADB + RAG
-    # ============================================================
-
-    emit(
-        "rag",
-        "running",
-        "Building the research context with ChromaDB and RAG...",
+    research_combined = (
+        "SEARCH RESULTS:\n\n"
+        + state["search_results"]
+        + "\n\n"
+        + "DETAILED RESEARCH:\n\n"
+        + state["scraped_content"]
     )
 
-    print(
-        "[3/5] Storing research in ChromaDB..."
-    )
-
-    try:
-
-        research_combined = (
-            "SEARCH RESULTS:\n\n"
-            + state["search_results"]
-            + "\n\n"
-            + "DETAILED RESEARCH:\n\n"
-            + state["scraped_content"]
-        )
-
-        # --------------------------------------------------------
-        # Store web research
-        # --------------------------------------------------------
-
-        if user_id and chat_id:
-
-            add_research_documents(
-                user_id=user_id,
-                chat_id=chat_id,
-                topic=topic,
-                content=research_combined,
-            )
-
-        # --------------------------------------------------------
-        # Retrieve relevant research
-        # --------------------------------------------------------
-
-        relevant_documents = []
-
-        if user_id and chat_id:
-
-            relevant_documents = search_research(
-                query=topic,
-                user_id=user_id,
-                chat_id=chat_id,
-                k=5,
-            )
-
-        # --------------------------------------------------------
-        # Build RAG context
-        # --------------------------------------------------------
-
-        if relevant_documents:
-
-            rag_context = "\n\n".join(
-                document.page_content
-                for document in relevant_documents
-            )
-
-        else:
-
-            rag_context = research_combined
-
-        state["rag_context"] = rag_context
-
-    except Exception:
-
-        emit(
-            "rag",
-            "failed",
-            "RAG processing failed.",
-        )
-
-        raise
-
-    print(
-        "[3/5] ChromaDB/RAG completed."
-    )
-
-    emit(
-        "rag",
-        "completed",
-        "Research context prepared.",
-    )
+    state["combined_context"] = research_combined
 
     # ============================================================
-    # 4. WRITER AGENT
+    # 3. WRITER AGENT
     # ============================================================
 
     emit(
@@ -401,7 +319,7 @@ Only use information supported by the sources.
     )
 
     print(
-        "[4/5] Writing final research report..."
+        "[3/5] Writing final research report..."
     )
 
     try:
@@ -409,7 +327,7 @@ Only use information supported by the sources.
         state["report"] = writer_chain.invoke(
             {
                 "topic": topic,
-                "research": state["rag_context"][:8000],
+                "research": state["combined_context"][:8000],
             }
         )
 
@@ -430,7 +348,7 @@ Only use information supported by the sources.
         raise
 
     print(
-        "[4/5] Writer completed."
+        "[3/5] Writer completed."
     )
 
     emit(
@@ -440,7 +358,7 @@ Only use information supported by the sources.
     )
 
     # ============================================================
-    # 5. CRITIC AGENT
+    # 4. CRITIC AGENT
     # ============================================================
 
     emit(
@@ -450,7 +368,7 @@ Only use information supported by the sources.
     )
 
     print(
-        "[5/5] Critic reviewing the report..."
+        "[4/5] Critic reviewing the report..."
     )
 
     try:
@@ -476,7 +394,7 @@ Only use information supported by the sources.
         raise
 
     print(
-        f"[5/5] Critic completed. "
+        f"[4/5] Critic completed. "
         f"Score: {state['critic_score']}/10"
     )
 
@@ -502,7 +420,7 @@ Only use information supported by the sources.
         topic,
         state["search_results"],
         state["scraped_content"],
-        state["rag_context"],
+        state["combined_context"],
         state["report"],
         state["feedback"],
     )
@@ -510,7 +428,6 @@ Only use information supported by the sources.
     state["pipeline"] = {
         "search": "completed",
         "reader": "completed",
-        "rag": "completed",
         "writer": "completed",
         "critic": "completed",
         "revisions": 0,

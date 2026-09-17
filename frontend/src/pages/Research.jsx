@@ -55,7 +55,6 @@ const Research = () => {
   const [pipeline, setPipeline] = useState({
     search: "pending",
     reader: "pending",
-    rag: "pending",
     writer: "pending",
     critic: "pending",
     revisions: 0,
@@ -186,7 +185,6 @@ const Research = () => {
     setPipeline({
       search: "pending",
       reader: "pending",
-      rag: "pending",
       writer: "pending",
       critic: "pending",
       revisions: 0,
@@ -226,7 +224,6 @@ const Research = () => {
       setPipeline({
         search: "completed",
         reader: "completed",
-        rag: "completed",
         writer: "completed",
         critic: "completed",
         revisions: 0,
@@ -481,10 +478,7 @@ const Research = () => {
     setPipeline({
       search: "running",
       reader: "pending",
-      rag: "pending",
-      writer: "pending",
-      critic: "pending",
-      revisions: 0,
+
       final_score: 0,
     });
 
@@ -613,9 +607,6 @@ const Research = () => {
           "completed",
         reader:
           result.pipeline?.reader ||
-          "completed",
-        rag:
-          result.pipeline?.rag ||
           "completed",
         writer:
           result.pipeline?.writer ||
@@ -1782,11 +1773,6 @@ const Research = () => {
                         )}
 
                         {pipelineStage(
-                          "RAG",
-                          pipeline.rag
-                        )}
-
-                        {pipelineStage(
                           "Writer",
                           pipeline.writer
                         )}
@@ -2252,11 +2238,6 @@ const Research = () => {
                     {pipelineStage(
                       "Reader",
                       pipeline.reader
-                    )}
-
-                    {pipelineStage(
-                      "RAG",
-                      pipeline.rag
                     )}
 
                     {pipelineStage(

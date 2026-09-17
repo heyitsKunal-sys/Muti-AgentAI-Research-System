@@ -510,11 +510,6 @@ async def create_research(
                 "completed",
             ),
 
-            "rag": pipeline_details.get(
-                "rag",
-                "completed",
-            ),
-
             "writer": pipeline_details.get(
                 "writer",
                 "completed",
