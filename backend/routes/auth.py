@@ -60,9 +60,11 @@ class ResetPasswordRequest(BaseModel):
 @router.post("/register")
 async def register(user: UserCreate):
 
+    email = str(user.email).strip().lower()
+
     existing_user = await users_collection.find_one(
         {
-            "email": user.email,
+            "email": email,
         }
     )
 
@@ -107,7 +109,7 @@ async def register(user: UserCreate):
 
         await users_collection.update_one(
             {
-                "email": user.email,
+                "email": email,
             },
             {
                 "$set": {
@@ -129,7 +131,7 @@ async def register(user: UserCreate):
         await users_collection.insert_one(
             {
                 "name": user.name,
-                "email": user.email,
+                "email": email,
                 "password_hash": password_hash,
                 "is_verified": False,
                 "plan": "free",
@@ -146,7 +148,7 @@ async def register(user: UserCreate):
     # -----------------------------------------------------
 
     await save_otp(
-        user.email,
+        email,
         otp,
     )
 
@@ -155,11 +157,19 @@ async def register(user: UserCreate):
     # Send OTP
     # -----------------------------------------------------
 
-    await send_otp_email(
-        recipient_email=user.email,
-        recipient_name=user.name,
-        otp=otp,
-    )
+    try:
+        await send_otp_email(
+            recipient_email=email,
+            recipient_name=user.name,
+            otp=otp,
+        )
+    except Exception as error:
+        await clear_otp(email)
+        print("Signup verification email failed:", str(error))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="We could not send the verification email. Please try again.",
+        ) from error
 
 
     return {
@@ -167,7 +177,7 @@ async def register(user: UserCreate):
             "Verification OTP sent "
             "to your email."
         ),
-        "email": user.email,
+        "email": email,
     }
 
 
@@ -180,9 +190,11 @@ async def verify_user_otp(
     data: OTPVerify,
 ):
 
+    email = str(data.email).strip().lower()
+
     user = await users_collection.find_one(
         {
-            "email": data.email,
+            "email": email,
         }
     )
 
@@ -209,7 +221,7 @@ async def verify_user_otp(
     # -----------------------------------------------------
 
     is_valid = await verify_otp(
-        data.email,
+        email,
         data.otp,
     )
 
@@ -229,7 +241,7 @@ async def verify_user_otp(
 
     await users_collection.update_one(
         {
-            "email": data.email,
+            "email": email,
         },
         {
             "$set": {
@@ -247,7 +259,7 @@ async def verify_user_otp(
     # -----------------------------------------------------
 
     await clear_otp(
-        data.email
+        email
     )
 
 
@@ -267,9 +279,11 @@ async def login(
     user: UserLogin,
 ):
 
+    email = str(user.email).strip().lower()
+
     existing_user = await users_collection.find_one(
         {
-            "email": user.email,
+            "email": email,
         }
     )
 
@@ -375,9 +389,11 @@ async def forgot_password(
     data: ForgotPasswordRequest,
 ):
 
+    email = str(data.email).strip().lower()
+
     user = await users_collection.find_one(
         {
-            "email": data.email,
+            "email": email,
         }
     )
 
@@ -427,7 +443,7 @@ async def forgot_password(
     # -----------------------------------------------------
 
     await save_otp(
-        data.email,
+        email,
         otp,
     )
 
@@ -436,14 +452,23 @@ async def forgot_password(
     # Send reset OTP
     # -----------------------------------------------------
 
-    await send_otp_email(
-        recipient_email=data.email,
-        recipient_name=user.get(
-            "name",
-            "Meridian User",
-        ),
-        otp=otp,
-    )
+    try:
+        await send_otp_email(
+            recipient_email=email,
+            recipient_name=user.get(
+                "name",
+                "Meridian User",
+            ),
+            otp=otp,
+            purpose="password_reset",
+        )
+    except Exception as error:
+        await clear_otp(email)
+        print("Password reset email failed:", str(error))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="We could not send the reset email. Please try again.",
+        ) from error
 
 
     return {
@@ -464,14 +489,19 @@ async def reset_password(
     data: ResetPasswordRequest,
 ):
 
+    email = str(data.email).strip().lower()
+    otp = data.otp.strip()
+
     user = await users_collection.find_one(
         {
-            "email": data.email,
+            "email": email,
         }
     )
 
 
     if not user:
+
+        print("Password reset rejected: account not found")
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -486,6 +516,8 @@ async def reset_password(
         False,
     ):
 
+        print("Password reset rejected: account is not verified")
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -499,11 +531,20 @@ async def reset_password(
     # -----------------------------------------------------
 
     is_valid = await verify_otp(
-        data.email,
-        data.otp,
+        email,
+        otp,
     )
 
     if not is_valid:
+
+        print(
+            "Password reset rejected: invalid or expired OTP",
+            {
+                "has_saved_otp": bool(user.get("otp")),
+                "submitted_length": len(otp),
+                "saved_length": len(str(user.get("otp", ""))),
+            },
+        )
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -528,7 +569,7 @@ async def reset_password(
 
     await users_collection.update_one(
         {
-            "email": data.email,
+            "email": email,
         },
         {
             "$set": {
@@ -546,7 +587,7 @@ async def reset_password(
     # -----------------------------------------------------
 
     await clear_otp(
-        data.email
+        email
     )
 
 

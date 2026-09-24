@@ -20,20 +20,40 @@ async def send_otp_email(
     recipient_email: str,
     recipient_name: str,
     otp: str,
+    purpose: str = "verification",
 ):
+    is_password_reset = purpose == "password_reset"
+    subject = (
+        "Reset your Meridian password"
+        if is_password_reset
+        else "Your Meridian verification code"
+    )
+    heading = (
+        "Reset your Meridian password"
+        if is_password_reset
+        else "Verify your Meridian account"
+    )
+    description = (
+        "Use the following code to reset your Meridian password:"
+        if is_password_reset
+        else "Use the following verification code to complete your Meridian signup:"
+    )
+    safety_message = (
+        "If you did not request a password reset, you can ignore this email."
+        if is_password_reset
+        else "If you did not create a Meridian account, you can ignore this email."
+    )
+
     result = await brevo_client.transactional_emails.send_transac_email(
-        subject="Your Meridian verification code",
+        subject=subject,
         html_content=f"""
         <html>
             <body style="font-family: Arial, sans-serif;">
-                <h2>Verify your Meridian account</h2>
+                <h2>{heading}</h2>
 
                 <p>Hello {recipient_name},</p>
 
-                <p>
-                    Use the following verification code to
-                    complete your Meridian signup:
-                </p>
+                <p>{description}</p>
 
                 <h1 style="letter-spacing: 6px;">
                     {otp}
@@ -44,8 +64,7 @@ async def send_otp_email(
                 </p>
 
                 <p>
-                    If you did not create a Meridian account,
-                    you can ignore this email.
+                    {safety_message}
                 </p>
 
                 <p>
@@ -56,10 +75,9 @@ async def send_otp_email(
         """,
         text_content=(
             f"Hello {recipient_name},\n\n"
-            f"Your Meridian verification code is: {otp}\n\n"
+            f"Your Meridian code is: {otp}\n\n"
             "This code expires in 10 minutes.\n\n"
-            "If you did not create a Meridian account, "
-            "you can ignore this email.\n\n"
+            f"{safety_message}\n\n"
             "— Meridian"
         ),
         sender=SendTransacEmailRequestSender(

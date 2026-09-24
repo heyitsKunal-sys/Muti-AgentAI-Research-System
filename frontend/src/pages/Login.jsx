@@ -278,6 +278,7 @@ const Login = () => {
 
                                         <button
                                             type="button"
+                                            onClick={() => navigate("/forgot-password")}
                                             className="
                                                 shrink-0
                                                 text-[11px]

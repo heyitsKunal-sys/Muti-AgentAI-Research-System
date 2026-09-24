@@ -9,6 +9,7 @@ import {
   FileText,
   Loader2,
   LogOut,
+  Menu,
   Paperclip,
   Pencil,
   Plus,
@@ -1480,7 +1481,51 @@ const Research = () => {
 
         {/* HEADER */}
 
-        
+        <header
+          className="
+            sticky top-0 z-30
+            flex h-16 items-center justify-between
+            border-b border-white/10
+            bg-[#050711]/90 px-4
+            backdrop-blur-xl
+            sm:px-6
+            xl:hidden
+          "
+        >
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen(true)}
+            className="
+              inline-flex items-center gap-2
+              rounded-lg p-2
+              text-slate-400 transition
+              hover:bg-white/5 hover:text-white
+            "
+            aria-label="Open research history"
+          >
+            <Menu size={20} />
+            <span className="text-sm font-medium text-slate-200">
+              Meridian
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleNewResearch}
+            className="
+              inline-flex items-center gap-2
+              rounded-lg border border-white/10
+              px-3 py-2 text-xs font-medium
+              text-slate-300 transition
+              hover:border-violet-500/30
+              hover:bg-violet-500/[0.06]
+              hover:text-white
+            "
+          >
+            <Plus size={15} />
+            New research
+          </button>
+        </header>
 
         {/* CONTENT */}
 
@@ -1504,8 +1549,9 @@ const Research = () => {
             <div
               className="
                 flex-1 overflow-y-auto
-                px-4 py-8
+                px-4 py-6
                 sm:px-6
+                sm:py-8
                 lg:px-10
               "
             >
@@ -1523,10 +1569,11 @@ const Research = () => {
                   !loadingChat && (
                     <div
                       className="
-                        flex min-h-[calc(100vh-15rem)]
+                        flex min-h-[calc(100vh-13rem)]
                         flex-col
                         items-center
                         justify-center
+                        px-2
                         text-center
                       "
                     >
@@ -1940,6 +1987,7 @@ const Research = () => {
                       max-h-32
                       min-h-[44px]
                       flex-1 resize-none
+                      min-w-0
                       bg-transparent
                       px-2 py-2.5
                       text-sm
